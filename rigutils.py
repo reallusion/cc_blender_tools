@@ -3349,10 +3349,16 @@ def fetch_action_curve_database(source_action):
     if utils.B440():
         all_actions = arm_actions + key_actions
         a: bpy.types.Action
+        done_channelbags = []
+        done_actions = []
         for a in all_actions:
+            if a in done_actions: continue
+            done_actions.append(a)
             channelbags = utils.get_action_channelbags(a)
             # build database of fcurves by slot
             for channel in channelbags:
+                if channel in done_channelbags: continue
+                done_channelbags.append(channel)
                 slot = channel.slot
                 is_source_channel = False
                 for MC in SOURCE_CHANNELS:
@@ -3379,7 +3385,10 @@ def fetch_action_curve_database(source_action):
             all_actions.append(("OBJECT", arm_action))
         for key_action in key_actions:
             all_actions.append(("KEY", key_action))
+        done_actions = []
         for slot_type, a in all_actions:
+            if a in done_actions: continue
+            done_actions.append(a)
             # build database of fcurves by slot
             if slot_type not in data_curves:
                 data_curves[slot_type] = {}
@@ -4300,6 +4309,13 @@ def mix_actions(src_action, src_slot, dst_action, dst_slot, frame_start, frame_e
     src_channelbag = utils.get_action_channelbag(src_action, src_slot)
     dst_channelbag = utils.get_action_channelbag(dst_action, dst_slot)
 
+    root_bone = "CC_Base_BoneRoot"
+    src_root_transform_set = fetch_action_bone_transform_set(src_channelbag, root_bone)
+    dst_root_transform_set = fetch_action_bone_transform_set(dst_channelbag, root_bone)
+    print(src_root_transform_set)
+    print(dst_root_transform_set)
+    print(evaluate_action_bone_transform_set(src_root_transform_set, frame_start))
+
     if not src_channelbag:
         utils.log_error(f"Mix Actions: No source channels!")
         return
@@ -4682,4 +4698,44 @@ def finalize_motion_import(rig, motion_action, action_store_id, action_mode, fra
             delete_motion_set(set_id)
 
         props.delete_action_store(action_store_id)
+
+
+def fetch_action_bone_transform_set(channelbag: bpy.types.ActionChannelbag, bone_name: str):
+    fcurve: bpy.types.FCurve = None
+    loc_path = f"pose.bones[\"{bone_name}\"].location"
+    rot_path = f"pose.bones[\"{bone_name}\"].rotation_quaternion"
+    # TODO what if it's not a quaternion?
+    loc_curves = [None, None, None]
+    rot_curves = [None, None, None, None]
+    has_loc_curves = False
+    has_rot_curves = False
+    for fcurve in channelbag.fcurves:
+        if fcurve.data_path == loc_path:
+            loc_curves[fcurve.array_index] = fcurve
+            has_loc_curves = True
+        elif fcurve.data_path == rot_path:
+            rot_curves[fcurve.array_index] = fcurve
+            has_rot_curves = True
+    if has_rot_curves and has_loc_curves:
+        return loc_curves, rot_curves
+    else:
+        return None, None
+
+
+def evaluate_action_bone_transform_set(transform_set: tuple, frame: int):
+    loc_curves, rot_curves = transform_set
+    if loc_curves:
+        loc = Vector((loc_curves[0].evaluate(frame),
+                      loc_curves[1].evaluate(frame),
+                      loc_curves[2].evaluate(frame)))
+    else:
+        loc = Vector((0,0,0))
+    if rot_curves:
+        rot = Quaternion((rot_curves[0].evaluate(frame),
+                          rot_curves[1].evaluate(frame),
+                          rot_curves[2].evaluate(frame),
+                          rot_curves[3].evaluate(frame)))
+    else:
+        rot = Quaternion((1,0,0,0))
+    return loc, rot
 

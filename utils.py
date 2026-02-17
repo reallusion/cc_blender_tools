@@ -2264,7 +2264,7 @@ def get_action_fcurves(action: bpy.types.Action) -> List[bpy.types.FCurve]:
     return fcurves
 
 
-def get_action_channelbag(action: bpy.types.Action, slot=None, slot_type=None):
+def get_action_channelbag(action: bpy.types.Action, slot=None, slot_type=None) -> bpy.types.ActionChannelbag:
     if not action:
         return None
     if B440() and (slot or slot_type):
