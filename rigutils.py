@@ -4309,12 +4309,9 @@ def mix_actions(src_action, src_slot, dst_action, dst_slot, frame_start, frame_e
     src_channelbag = utils.get_action_channelbag(src_action, src_slot)
     dst_channelbag = utils.get_action_channelbag(dst_action, dst_slot)
 
-    root_bone = "CC_Base_BoneRoot"
-    src_root_transform_set = fetch_action_bone_transform_set(src_channelbag, root_bone)
-    dst_root_transform_set = fetch_action_bone_transform_set(dst_channelbag, root_bone)
-    print(src_root_transform_set)
-    print(dst_root_transform_set)
-    print(evaluate_action_bone_transform_set(src_root_transform_set, frame_start))
+    #root_bone = "CC_Base_BoneRoot"
+    #src_root_transform_set = fetch_action_bone_transform_set(src_channelbag, root_bone)
+    #dst_root_transform_set = fetch_action_bone_transform_set(dst_channelbag, root_bone)
 
     if not src_channelbag:
         utils.log_error(f"Mix Actions: No source channels!")
