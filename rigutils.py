@@ -3188,24 +3188,47 @@ class CCICActionImportOptions(bpy.types.Operator):
             opts = props.action_options
             column.separator()
             column.row().label(text="Global Motion Options:")
-            column.row().prop(opts, "action_mode")
-            column.row().prop(opts, "frame_mode")
+            grid = column.grid_flow(row_major=True, columns=3)
+            grid.label(text="Action Mode:")
+            grid.prop(opts, "action_mode", text="")
+            grid.prop(opts, "relative_root")
+            grid.label(text="Frame Mode:")
+            grid.prop(opts, "frame_mode", text="")
+            grid.prop(opts, "use_blend")
+            if opts.use_blend:
+                grid.separator()
+                grid.separator()
+                grid.separator()
+                grid.prop(opts, "blend_in_frames", slider=True)
+                grid.prop(opts, "blend_strength", slider=True)
+                grid.prop(opts, "blend_out_frames", slider=True)
+
 
         if self.chr_cache and self.chr_cache.action_options:
             arm = self.chr_cache.get_armature()
             opts = self.chr_cache.action_options
 
             column.separator()
+            grid = column.grid_flow(row_major=True, columns=3, even_columns=True)
+            grid.prop(opts, "override_global")
+            grid.label(text=f"{self.chr_cache.character_name}")
+            grid.separator()
 
-            row = column.row()
-            row.prop(opts, "override_global")
-            row.label(text=f"{self.chr_cache.character_name}")
-            column = column.column()
-            column.enabled = opts.override_global
-            column.row().prop(opts, "action_mode")
-            column.row().prop(opts, "frame_mode")
-
-            return
+            grid = column.grid_flow(row_major=True, columns=3)
+            grid.enabled = opts.override_global
+            grid.label(text="Action Mode:")
+            grid.prop(opts, "action_mode", text="")
+            grid.prop(opts, "relative_root")
+            grid.label(text="Frame Mode:")
+            grid.prop(opts, "frame_mode", text="")
+            grid.prop(opts, "use_blend")
+            if opts.use_blend:
+                grid.separator()
+                grid.separator()
+                grid.separator()
+                grid.prop(opts, "blend_in_frames", slider=True)
+                grid.prop(opts, "blend_strength", slider=True)
+                grid.prop(opts, "blend_out_frames", slider=True)
 
             column.separator()
 
@@ -4448,7 +4471,7 @@ def target_slot(target):
 
 def mix_motion_set(rig, action_store_id, frame_start, frame_end):
     props = vars.props()
-    stored_main_action = props.fetch_stored_rig_action(action_store_id)
+    stored_main_action, stored_main_slot = props.fetch_stored_rig_action(action_store_id)
     done = False
     objects = [rig]
     if utils.object_exists_is_armature(rig):
@@ -4645,39 +4668,50 @@ def finalize_rlx_import(obj, actions, action_store_id, action_mode, frame_start=
         props.delete_action_store(action_store_id)
 
 
-def finalize_motion_import(rig, motion_action, action_store_id, action_mode, frame_start=None, frame_end=None):
+def finalize_motion_import(rig, motion_rig_action, action_store_id, action_mode, frame_start=None, frame_end=None):
     props = vars.props()
 
-    motion_start_frame, motion_end_frame = get_motion_set_frame_range(motion_action)
+    motion_start_frame, motion_end_frame = get_motion_set_frame_range(motion_rig_action)
     if frame_start is None:
         frame_start = motion_start_frame
     if frame_end is None:
         frame_end = motion_end_frame
 
     utils.log_info("Finalize motion import:")
-    utils.log_info(f"motion action: {motion_action.name}")
+    utils.log_info(f"motion action: {motion_rig_action.name}")
     utils.log_info(f"start frame: {frame_start}")
     utils.log_info(f"end frame: {frame_end}")
 
     if frame_start is None or frame_end is None:
-        utils.log_error(f"Unable to fetch frame range from action!: {motion_action}")
+        utils.log_error(f"Unable to fetch frame range from action!: {motion_rig_action}")
         props.restore_actions(action_store_id)
         props.delete_action_store(action_store_id)
         return
 
-    if motion_action:
-        set_id = get_motion_set_ids(motion_action)[0]
+    if motion_rig_action:
+        set_id = get_motion_set_ids(motion_rig_action)[0]
         stored_actions = props.fetch_stored_actions(action_store_id)
+        motion_rig_slot = target_slot(rig)
+        stored_rig_action, stored_rig_slot = props.fetch_stored_rig_action(action_store_id)
+        #masked_bones: list = []
+        #mask_bones(rig, motion_rig_action, motion_rig_slot, masked_bones)
+        opts = props.action_options
+        if opts.relative_root or opts.use_blend:
+            resample_blend(rig, motion_rig_action, motion_rig_slot,
+                        stored_rig_action, stored_rig_slot, frame_start,
+                        relative_root=opts.relative_root,
+                        use_blend=opts.use_blend,
+                        blend_strength=opts.blend_strength)
 
         # now decide what to do with the actions based on the action_mode and frame_mode
 
         if action_mode == "NEW":
             # already loaded, do nothing else
-            utils.log_info(f"Action Mode NEW: Loaded new motion set: {motion_action.name} / ({set_id})")
+            utils.log_info(f"Action Mode NEW: Loaded new motion set: {motion_rig_action.name} / ({set_id})")
 
         elif not stored_actions:
             # already loaded, do nothing else
-            utils.log_info(f"No current motion: Loaded new motion set: {motion_action.name} / ({set_id})")
+            utils.log_info(f"No current motion: Loaded new motion set: {motion_rig_action.name} / ({set_id})")
 
         elif action_mode == "REPLACE":
             # get the stored motion set data (and name) and apply it to the new motion_action
@@ -4690,14 +4724,223 @@ def finalize_motion_import(rig, motion_action, action_store_id, action_mode, fra
         elif action_mode == "BLEND":
             old_action = stored_actions[0]
             old_set_id = get_motion_set_ids(old_action)[0]
-            utils.log_info(f"Action Mode BLEND: blending motion set: {motion_action.name} / ({set_id}) over existing motion: {old_action.name} / ({old_set_id})")
+            utils.log_info(f"Action Mode BLEND: blending motion set: {motion_rig_action.name} / ({set_id}) over existing motion: {old_action.name} / ({old_set_id})")
             mix_motion_set(rig, action_store_id, frame_start, frame_end)
             delete_motion_set(set_id)
 
         props.delete_action_store(action_store_id)
 
 
+def resample_relative_root(rig, motion_action, motion_slot, stored_action, stored_slot, from_frame):
+    root_bone_name = rig.pose.bones[0].name
+    motion_channelbag = utils.get_action_channelbag(motion_action, slot=motion_slot)
+    stored_channelbag = utils.get_action_channelbag(stored_action, slot=stored_slot)
+    stored_transform_set = fetch_action_bone_transform_set(stored_channelbag, root_bone_name)
+    motion_transform_set = fetch_action_bone_transform_set(motion_channelbag, root_bone_name)
+    stored_start_loc, stored_start_rot = evaluate_action_bone_transform_set(stored_transform_set, from_frame)
+    motion_start_loc, motion_start_rot = evaluate_action_bone_transform_set(motion_transform_set, 1)
+
+    utils.log_info(f"Resampling root motion: {motion_action.name}")
+
+    # relative transformation between from_frame of stored motion and start of new motion
+    MS = utils.make_transform_matrix(stored_start_loc, stored_start_rot)
+    MM = utils.make_transform_matrix(motion_start_loc, motion_start_rot)
+    MD = MS @ MM.inverted()
+
+    # build a list of motion root transform fcurves
+    motion_loc_curves, motion_rot_curves = motion_transform_set
+    motion_curves = motion_loc_curves + motion_rot_curves
+    # should be 7
+    num_curves = len(motion_curves)
+
+    # go through motion root transform fcurves and fetch the raw data,
+    # and build a list of discrete frames
+    frames = set()
+    fcurve: bpy.types.FCurve = None
+    for fcurve in motion_curves:
+        num_points = len(fcurve.keyframe_points)
+        data = [0.0, 0.0] * num_points
+        fcurve.keyframe_points.foreach_get('co', data)
+        for i in range(0, len(data), 2):
+            frames.add(data[i])
+
+    # sort the frames in order
+    num_frames = len(frames)
+    sorted_frames = list(frames)
+    sorted_frames.sort()
+    utils.log_info(f" - {num_frames} resampled frames")
+
+    # generate resampled data lists for the curves in the motion root transform
+    resampled_data = []
+    for i in range(0, num_curves):
+        data = [0.0, 0.0] * num_frames
+        resampled_data.append(data)
+
+    # evaluate the motion root transform at each frame and
+    # transpose relative to the stored root transform
+    for f, frame in enumerate(sorted_frames):
+        motion_loc, motion_rot = evaluate_action_bone_transform_set(motion_transform_set, frame)
+        MF = utils.make_transform_matrix(motion_loc, motion_rot)
+        MR = MD @ MF
+        rel_loc = MR.to_translation()
+        rel_rot = MR.to_quaternion()
+        flat_transform = [rel_loc.x, rel_loc.y, rel_loc.z,
+                          rel_rot.w, rel_rot.x, rel_rot.y, rel_rot.z]
+        # write to the resampled curve data
+        index = f * 2
+        for i in range(0, num_curves):
+            resampled_data[i][index] = frame
+            resampled_data[i][index+1] = flat_transform[i]
+
+    # write the resampled transposed curve data back to the motion root transform curves
+    for i, fcurve in enumerate(motion_curves):
+        fcurve.keyframe_points.clear()
+        fcurve.keyframe_points.add(num_frames)
+        fcurve.keyframe_points.foreach_set('co', resampled_data[i])
+        reset_fcurve_interpolation(fcurve)
+
+    return
+
+
+def resample_blend(rig, motion_action, motion_slot, stored_action, stored_slot, from_frame,
+                   relative_root=False,
+                   bone_names=None,
+                   use_blend=False,
+                   blend_strength=1.0):
+    # TODO What about shape keys???
+
+    do_blend = use_blend and blend_strength != 1.0
+
+    if not relative_root and not do_blend:
+        return
+
+    motion_channelbag = utils.get_action_channelbag(motion_action, slot=motion_slot)
+    stored_channelbag = utils.get_action_channelbag(stored_action, slot=stored_slot)
+
+    if not bone_names:
+        if do_blend:
+            bone_names = [ b.name for b in rig.pose.bones ]
+        else:
+            bone_names = [ rig.pose.bones[0].name ]
+
+    for bone_name in bone_names:
+
+        is_root = bone_name == rig.pose.bones[0].name
+        stored_transform_set = fetch_action_bone_transform_set(stored_channelbag, bone_name)
+        motion_transform_set = fetch_action_bone_transform_set(motion_channelbag, bone_name)
+
+        if is_root and relative_root:
+            # relative transformation between from_frame of stored motion and start of new motion
+            stored_start_loc, stored_start_rot = evaluate_action_bone_transform_set(stored_transform_set, from_frame)
+            motion_start_loc, motion_start_rot = evaluate_action_bone_transform_set(motion_transform_set, 1)
+            MS = utils.make_transform_matrix(stored_start_loc, stored_start_rot)
+            MM = utils.make_transform_matrix(motion_start_loc, motion_start_rot)
+            MD = MS @ MM.inverted()
+
+        utils.log_info(f"Blending motion bone: {motion_action.name} {bone_name}")
+
+        # build a list of motion bone transform fcurves
+        motion_loc_curves, motion_rot_curves = motion_transform_set
+        motion_curves = motion_loc_curves + motion_rot_curves
+        # should be 7
+        num_curves = len(motion_curves)
+
+        # build a list of motion bone transform fcurves
+        stored_loc_curves, stored_rot_curves = stored_transform_set
+        stored_curves = stored_loc_curves + stored_rot_curves
+
+        # go through motion bone transform fcurves and build a list of discrete frames
+        frames = set()
+        fcurve: bpy.types.FCurve = None
+        start_frame = None
+        end_frame = None
+        for fcurve in motion_curves:
+            num_points = len(fcurve.keyframe_points)
+            data = [0.0, 0.0] * num_points
+            fcurve.keyframe_points.foreach_get('co', data)
+            for i in range(0, len(data), 2):
+                frame = data[i]
+                if not start_frame or frame < start_frame:
+                    start_frame = frame
+                if not end_frame or frame > end_frame:
+                    end_frame = frame
+                frames.add(frame)
+        # include frames from the source curve if blending
+        if do_blend:
+            for fcurve in stored_curves:
+                num_points = len(fcurve.keyframe_points)
+                data = [0.0, 0.0] * num_points
+                fcurve.keyframe_points.foreach_get('co', data)
+                for i in range(0, len(data), 2):
+                    frame = data[i]
+                    if frame > start_frame or frame < end_frame:
+                        frames.add(frame)
+
+        # sort the frames in order
+        num_frames = len(frames)
+        sorted_frames = list(frames)
+        sorted_frames.sort()
+        utils.log_info(f" - {num_frames} resampled frames")
+
+        # generate resampled data lists for the curves in the motion bone transform
+        resampled_data = []
+        for i in range(0, num_curves):
+            data = [0.0, 0.0] * num_frames
+            resampled_data.append(data)
+
+        # evaluate the motion root transform at each frame ...
+        blend_strength = max(0, blend_strength)
+        stored_strength = max(0, 1.0 - blend_strength)
+        for f, frame in enumerate(sorted_frames):
+            motion_loc, motion_rot = evaluate_action_bone_transform_set(motion_transform_set, frame)
+
+            # apply relative root:
+            if is_root and relative_root:
+                motion_loc, motion_rot = evaluate_action_bone_transform_set(motion_transform_set, frame)
+                MF = utils.make_transform_matrix(motion_loc, motion_rot)
+                MR = MD @ MF
+                motion_loc = MR.to_translation()
+                motion_rot = MR.to_quaternion()
+
+            # apply motion blend:
+            if do_blend:
+                stored_loc, stored_rot = evaluate_action_bone_transform_set(stored_transform_set, frame)
+                blend_loc = stored_loc.lerp(motion_loc, blend_strength)
+                blend_rot = stored_rot.slerp(motion_rot, blend_strength)
+            else:
+                blend_loc = motion_loc
+                blend_rot = motion_rot
+
+            flat_transform = [blend_loc.x, blend_loc.y, blend_loc.z,
+                            blend_rot.w, blend_rot.x, blend_rot.y, blend_rot.z]
+
+            # write to the resampled curve data:
+            index = f * 2
+            for i in range(0, num_curves):
+                resampled_data[i][index] = frame
+                resampled_data[i][index+1] = flat_transform[i]
+
+        # write the resampled transposed curve data back to the motion root transform curves:
+        for i, fcurve in enumerate(motion_curves):
+            fcurve.keyframe_points.clear()
+            fcurve.keyframe_points.add(num_frames)
+            fcurve.keyframe_points.foreach_set('co', resampled_data[i])
+            reset_fcurve_interpolation(fcurve)
+
+    return
+
+
+def get_relative_transformation(motion_loc: Vector, motion_rot: Quaternion,
+                           stored_loc: Vector, stored_rot: Quaternion):
+    delta_loc = stored_loc - motion_loc
+    M: Matrix = motion_rot.to_matrix().to_4x4()
+    S: Matrix = stored_rot.to_matrix().to_4x4()
+    D = M.inverted() @ S
+    return delta_loc, D
+
+
 def fetch_action_bone_transform_set(channelbag: bpy.types.ActionChannelbag, bone_name: str):
+    # TODO instead build a dict in one pass of transforms[bone_name] = (loc[fx,fy,fz], rot[fw,fx,fy,fz])
     fcurve: bpy.types.FCurve = None
     loc_path = f"pose.bones[\"{bone_name}\"].location"
     rot_path = f"pose.bones[\"{bone_name}\"].rotation_quaternion"

@@ -1447,8 +1447,14 @@ def store_expression_set(chr_cache, cc3_rig, rigify_rig=None, rigify_data=None):
                                     expression_cache.offset_translation = OR_tra
                                     expression_cache.offset_rotation = OR_euler
                         else:
-                            tra = utils.array_to_vector(expression_def["Bones"][bone_name]["Translate"])
-                            rot = utils.array_to_quaternion(expression_def["Bones"][bone_name]["Rotation"])
+                            try:
+                                tra = utils.array_to_vector(expression_def["Bones"][bone_name]["Translate"])
+                            except:
+                                tra = Vector((0,0,0))
+                            try:
+                                rot = utils.array_to_quaternion(expression_def["Bones"][bone_name]["Rotation"])
+                            except:
+                                rot = Quaternion((1,0,0,0))
                             pba: bpy.types.PoseBone = cc3_rig.pose.bones[bone_name]
                             tra_local = pba.bone.matrix.inverted() @ tra
                             rot_euler = rot.to_euler("XYZ")
@@ -4186,7 +4192,7 @@ class CC3Rigifier(bpy.types.Operator):
                     fix_rigify_bones(chr_cache, self.rigify_rig)
                     add_def_bones(chr_cache, self.cc3_rig, self.rigify_rig)
                     add_extension_bones(chr_cache, self.cc3_rig, self.rigify_rig, self.rigify_data.bone_mapping, acc_vertex_group_map)
-                    store_source_bone_data(self.cc3_rig, self.rigify_rig, self.rigify_data)
+                    store_source_bone_data(chr_cache, self.cc3_rig, self.rigify_rig, self.rigify_data)
                     rigify_spring_rigs(chr_cache, self.cc3_rig, self.rigify_rig, self.rigify_data.bone_mapping)
                     if self.use_expression_rig(chr_cache):
                         facerig.build_facerig_drivers(chr_cache, self.rigify_rig)
@@ -4629,6 +4635,7 @@ class CC3RigifierModal(bpy.types.Operator):
     def voxel_heat_skinning_start(self, context):
         # fix cc3 rig (bone lengths & deform settings)
         arm = self.chr_cache.get_armature()
+        utils.unhide(arm)
         rigutils.fix_cc3_standard_rig(arm)
 
         # unparent object(s) keep transform

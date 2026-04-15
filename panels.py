@@ -2313,21 +2313,19 @@ class CC3RigifyPanel(bpy.types.Panel):
                             icon = "FAKE_USER_OFF" if not props.rigify_retarget_use_fake_user else "FAKE_USER_ON"
                             row.prop(props, "rigify_retarget_use_fake_user", text="", icon=icon, toggle=True)
 
-                        if chr_cache.can_expression_rig() or chr_cache.can_rigify_face():
-                            col = layout.column(align=True)
-                            col.label(text="Expression Rig:")
-                            col.row(align=True).prop(prefs, "rigify_expression_rig", expand=True)
-                            col = layout.column()
-                            if prefs.rigify_expression_rig == "META":
-                                if allow_rigify:
-                                    col.row().prop(prefs, "rigify_face_control_color")
-                                else:
-                                    wrapped_text_box(layout, "Invalid Facial Profile!", width, alert=True)
-                            elif prefs.rigify_expression_rig == "RIGIFY":
-                                if not chr_cache.can_rigify_face():
-                                    wrapped_text_box(layout, "Note: Full face rig cannot be auto-detected for this character.", width)
-                        else:
-                            grid = layout.grid_flow(columns=1, row_major=True, align=True)
+                        # Always show rigify expression rig type (so AccuRig without facial profile can switch to None)
+                        col = layout.column(align=True)
+                        col.label(text="Expression Rig:")
+                        col.row(align=True).prop(prefs, "rigify_expression_rig", expand=True)
+                        col = layout.column()
+                        if prefs.rigify_expression_rig == "META":
+                            if allow_rigify:
+                                col.row().prop(prefs, "rigify_face_control_color")
+                            else:
+                                wrapped_text_box(layout, "Invalid Facial Profile!", width, alert=True, icon="ERROR", )
+                        elif prefs.rigify_expression_rig == "RIGIFY":
+                            if not chr_cache.can_rigify_face():
+                                wrapped_text_box(layout, "Note: Full face rig cannot be auto-detected for this character.", width)
 
                         col = layout.column(align=True)
                         col.label(text="Bone Alignment:")
@@ -3816,6 +3814,12 @@ class CCICDataLinkPanel(bpy.types.Panel):
 
         chr_cache, obj, mat, obj_cache, mat_cache = utils.get_context_character(context, strict=True)
         selected_meshes = [ obj for obj in bpy.context.selected_objects if obj.type == "MESH"]
+        mesh_modify_id = None
+        for obj in bpy.context.selected_objects:
+            if utils.get_prop(obj, "rl_mesh_modify"):
+                mesh_modify_id = utils.get_prop(obj, "rl_link_id")
+                break
+
         #active_chr_cache = props.get_character_cache(obj, mat)
         all_valid_topography = True
         if chr_cache and selected_meshes:
@@ -3966,6 +3970,11 @@ class CCICDataLinkPanel(bpy.types.Panel):
                 text = "Go CC"
                 param = "SEND_ACTOR"
                 icon = "COMMUNITY"
+                if mesh_modify_id:
+                    param = "SEND_MESH_MODIFY"
+                    icon = "MESH_ICOSPHERE"
+                    text = "Update Mesh"
+                    grid.enabled = True
                 if chr_cache and chr_cache.is_morph():
                     param = "SEND_MORPH"
                     icon="MESH_ICOSPHERE"
@@ -3977,7 +3986,7 @@ class CCICDataLinkPanel(bpy.types.Panel):
                     text = "Invalid Character!"
                     param += "_INVALID"
                 grid.operator("ccic.datalink", icon=icon, text=text).param = param
-                if not (chr_cache and chr_cache.can_go_cc()):
+                if not mesh_modify_id and not (chr_cache and chr_cache.can_go_cc()):
                     grid.enabled = False
 
             elif is_iclone:

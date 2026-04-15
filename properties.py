@@ -706,11 +706,24 @@ class CCICActionOptions(bpy.types.PropertyGroup):
                     ], default="MATCH", name = "Import Frame Mode")
     use_masking: bpy.props.BoolProperty(default=False, name="Use Bone / Shape-Key Masking",
                                         description="Only import the keyframes from the masked bones and shape-keys")
-    override_global: bpy.props.BoolProperty(default=False, name="Character Motion Override:",
+    override_global: bpy.props.BoolProperty(default=False, name="Override for Character:",
                                             description="Override the global action options for this character or prop")
     import_mix_bones: bpy.props.CollectionProperty(type=CCIC_UI_MixItem)
     rig_mix_bones_list_index: bpy.props.IntProperty(default=-1)
     import_mix_bones_list_index: bpy.props.IntProperty(default=-1)
+    relative_root: bpy.props.BoolProperty(default=False, name="Relative Root",
+                                          description="When overwriting motion, import the motion root relative to the motion root being overwritten")
+    use_blend: bpy.props.BoolProperty(default=False, name="Use Blend",
+                                          description="Use Blend")
+    blend_strength: bpy.props.FloatProperty(default=1.0, name="Blend Strength",
+                                            min=0.0, soft_min=0.0, soft_max=1.0,
+                                            description="Blend Strength")
+    blend_in_frames: bpy.props.IntProperty(default=0, name="Blend In",
+                                           min=0, soft_max=300,
+                                           description="Blend In")
+    blend_out_frames: bpy.props.IntProperty(default=0, name="Blend Out",
+                                            min=0, soft_max=300,
+                                            description="Blend Out")
     action_store: bpy.props.CollectionProperty(type=CCICActionStore)
     # some masking settings ...
     # some masking presets ...
@@ -1919,6 +1932,11 @@ class CC3CharacterCache(bpy.types.PropertyGroup):
             import_type = import_type[1:]
         return self.get_import_type().lower() == import_type.lower()
 
+    def is_obj(self):
+        res = (self.import_flags & 2 > 0)
+        print("IS_OBJ", res)
+        return res
+
     def get_character_id(self):
         dir, file = os.path.split(self.import_file)
         name, ext = os.path.splitext(file)
@@ -2057,7 +2075,7 @@ class CC3CharacterCache(bpy.types.PropertyGroup):
         can_expresion_rig = self.can_expression_rig()
         can_rigify_face = self.can_rigify_face()
         return ((prefs.rigify_expression_rig == "META" and can_expresion_rig) or
-                (prefs.rigify_expression_rig == "RIGIFY" and can_rigify_face) or
+                (prefs.rigify_expression_rig == "RIGIFY") or
                 (prefs.rigify_expression_rig == "NONE"))
 
     def get_facial_profile(self, update=True):
@@ -3462,8 +3480,11 @@ class CC3ImportProps(bpy.types.PropertyGroup):
                 if (utils.object_exists_is_armature(action_store.object) or
                     utils.object_exists_is_light(action_store.object) or
                     utils.object_exists_is_camera(action_store.object)):
-                    return action_store.object_action
-        return None
+                    action = action_store.object_action
+                    slot_id = action_store.object_slot_id
+                    slot = utils.get_action_slot(action, slot_id=slot_id)
+                    return action, slot
+        return None, None
 
     def fetch_action_stores(self, store_id: str):
         """This returns a list of the action store Property Collection items directly"""
